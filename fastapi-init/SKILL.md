@@ -144,16 +144,37 @@ Before running copier, ensure you've completed the **Project Naming Advisor** se
 
 ### Step 3 — Generate Project from Template
 
+#### Option A: Interactive Mode (Recommended for manual use)
+
 ```bash
 copier copy https://github.com/fastapi/full-stack-fastapi-template my-awesome-project --trust
 ```
 
+Copier will ask you interactive questions (project name, author, email, etc.). Answer them based on the naming decisions from Step 2.
+
+#### Option B: Non-Interactive / AI-Assisted Mode
+
+In automation environments (like AI agents or CI/CD), copier's interactive prompts will fail. Use `--defaults` to generate with template defaults, then patch the configuration afterward:
+
+```bash
+copier copy --trust --defaults \
+  https://github.com/fastapi/full-stack-fastapi-template \
+  my-awesome-project
+```
+
+Then patch these files with your confirmed project name:
+- `frontend/index.html` — update `<title>`
+- `package.json` — update `"name"`
+- `backend/pyproject.toml` — update `description` (⚠️ keep `name = "app"` — see Troubleshooting)
+- `.env` — update `PROJECT_NAME`, `STACK_NAME`
+- `.copier/.copier-answers.yml` — update metadata
+
 > 🔑 The `--trust` flag is required because the template uses copier tasks (Jinja2 hooks) to execute post-copy scripts.
 
 **What happens during scaffolding:**
-- Copier asks you interactive questions (project name, author, etc.)
 - Generates a full project with backend (`app/`) and frontend (`frontend/`)
 - Creates `.env` files, Docker configs, CI/CD workflows, tests, etc.
+- Initializes a git repository with the template's history
 
 ### Step 4 — Configure Backend Environment
 
@@ -172,30 +193,99 @@ Edit `.env` and set at least these variables:
 ```env
 # Required
 SECRET_KEY=<paste-the-generated-key-here>
-
-# Database — SQLite for quick local dev
-DATABASE_URL=sqlite:///./app.db
-
-# Or PostgreSQL (default in template)
-# DATABASE_URL=postgresql+psycopg://postgres:changethis@localhost:5432/app
+PROJECT_NAME=my-awesome-project
+STACK_NAME=myawesomeproject
 
 # First superuser (auto-created by initial_data.py)
 FIRST_SUPERUSER=admin@example.com
 FIRST_SUPERUSER_PASSWORD=changethis
 ```
 
-### Step 5 — Initialize Database
+> 📋 `.env` is read from the parent directory (`../.env`) by default. Ensure the root `.env` exists and is copied to `backend/.env` if needed.
+
+#### Database: Choose Your Mode
+
+**Option 1 — SQLite (No Docker Required, Recommended for Quick Start)**
+
+If you don't have Docker installed, use SQLite for instant local development:
+
+1. **Edit `backend/.env`:**
+   ```env
+   POSTGRES_SERVER=sqlite
+   POSTGRES_DB=app
+   ```
+
+2. **Modify `backend/app/core/config.py`** to support SQLite:
+   ```python
+   # Remove PostgresDsn import, keep only: AnyUrl, BeforeValidator, EmailStr, HttpUrl
+   from pydantic import (
+       AnyUrl, BeforeValidator, EmailStr, HttpUrl,
+       computed_field, model_validator,
+   )
+
+   # Replace the SQLALCHEMY_DATABASE_URI property:
+   @computed_field
+   @property
+   def SQLALCHEMY_DATABASE_URI(self) -> str:
+       return (
+           f"sqlite:///./{self.POSTGRES_DB}.db"
+           if self.POSTGRES_SERVER == "sqlite"
+           else f"postgresql+psycopg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_SERVER}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
+       )
+   ```
+
+3. **Modify `backend/app/alembic/env.py`** for SQLite batch mode:
+   ```python
+   # In both run_migrations_offline() and run_migrations_online(),
+   # add render_as_batch=True to context.configure():
+   context.configure(
+       ...,
+       render_as_batch=True,
+   )
+   ```
+
+4. **Modify `backend/app/core/db.py`** to create tables directly (skip alembic for SQLite):
+   ```python
+   def init_db(session: Session) -> None:
+       # SQLite quick-start: create tables directly
+       from sqlmodel import SQLModel
+       SQLModel.metadata.create_all(engine)
+       # ... rest of the function (seed superuser)
+   ```
+
+**Option 2 — PostgreSQL (Default, Requires Docker)**
 
 ```bash
-# Run all pending migrations
-alembic upgrade head
+# Start PostgreSQL in Docker
+docker compose up -d db
 
-# Seed initial data (creates first superuser, etc.)
-python .\app\initial_data.py
+# Then use the template defaults (no code changes needed)
+alembic upgrade head
+python app/initial_data.py
 ```
 
-> 🛡️ On Windows use backslashes: `python .\app\initial_data.py`
-> On macOS/Linux use forward slashes: `python ./app/initial_data.py`
+### Step 5 — Initialize Database
+
+#### For SQLite (Quick Start):
+
+```bash
+cd my-awesome-project/backend
+rm -f app.db          # clean start
+uv run python app/initial_data.py
+```
+
+This creates `app.db` and seeds the first superuser.
+
+#### For PostgreSQL (Docker):
+
+```bash
+cd my-awesome-project/backend
+uv run alembic upgrade head
+uv run python app/initial_data.py
+```
+
+> 🛡️ On Windows use backslashes: `python app\initial_data.py`
+> On macOS/Linux use forward slashes: `python app/initial_data.py`
 
 ### Step 6 — Start Development Servers
 
@@ -203,11 +293,22 @@ python .\app\initial_data.py
 
 ```bash
 cd my-awesome-project/backend
-fastapi run --reload .\app\main.py
+```
+
+**On macOS/Linux:**
+```bash
+uv run fastapi run --reload ./app/main.py
+```
+
+**On Windows (recommended, avoids Unicode rendering issues):**
+```bash
+uv run python -m uvicorn app.main:app --reload --port 8000
 ```
 
 - API docs: http://localhost:8000/docs
 - ReDoc: http://localhost:8000/redoc
+
+> ⚠️ **Windows Note**: The `fastapi run` CLI may throw `NoConsoleScreenBufferError` on some Windows terminals due to `rich_toolkit` Unicode rendering. Use `uvicorn` directly as shown above.
 
 **Terminal 2 — Frontend:**
 
@@ -222,7 +323,7 @@ bun run dev
 
 ## Full Command Reference
 
-### Modern Stack (with uv — recommended)
+### Modern Stack with SQLite (No Docker — Quick Start)
 
 ```bash
 # 1. Install uv (once per machine)
@@ -237,27 +338,61 @@ uv tool install copier
 # 3. Describe your project & confirm name with the AI
 # (see "Project Naming Advisor" section above)
 
-# 4. Scaffold project with the confirmed name
-copier copy https://github.com/fastapi/full-stack-fastapi-template my-awesome-project --trust
+# 4. Scaffold project (use --defaults if non-interactive, then patch config)
+copier copy --trust --defaults \
+  https://github.com/fastapi/full-stack-fastapi-template \
+  my-awesome-project
 
-# 5. Configure env
-cd my-awesome-project/backend
+# 5. Patch project metadata (only needed with --defaults)
+# - frontend/index.html: <title>
+# - package.json: "name"
+# - backend/pyproject.toml: description
+# - .env: PROJECT_NAME, STACK_NAME
+
+# 6. Configure SQLite mode
+# Edit backend/.env:
+#   POSTGRES_SERVER=sqlite
+#   POSTGRES_DB=app
+#   PROJECT_NAME=my-awesome-project
+# Modify backend/app/core/config.py for SQLite URI (see Step 4)
+# Modify backend/app/core/db.py for SQLModel.metadata.create_all(engine)
+# Modify backend/app/alembic/env.py for render_as_batch=True
+
+# 7. Generate SECRET_KEY and configure .env
 python -c "import secrets; print(secrets.token_urlsafe(32))"
-# → edit .env with the generated SECRET_KEY
 
-# 6. Setup database with uv
-uv run alembic upgrade head
-uv run python .\app\initial_data.py   # Windows
-# uv run python ./app/initial_data.py  # macOS/Linux
+# 8. Setup database
+rm -f backend/app.db
+uv run --no-dev python backend/app/initial_data.py
 
-# 7. Start backend with uv
-uv run fastapi run --reload .\app\main.py   # Windows
-# uv run fastapi run --reload ./app/main.py  # macOS/Linux
+# 9. Start backend
+# macOS/Linux:
+uv run fastapi run --reload backend/app/main.py
+# Windows (recommended):
+uv run python -m uvicorn app.main:app --reload --port 8000
 
-# 8. Start frontend (new terminal)
+# 10. Start frontend (new terminal)
 cd my-awesome-project/frontend
 bun install
 bun run dev
+```
+
+### Modern Stack with PostgreSQL + Docker (Production-Ready)
+
+```bash
+# Steps 1-4 same as above
+
+# 5. Start PostgreSQL
+docker compose up -d db
+
+# 6. Configure .env (keep PostgreSQL defaults)
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+
+# 7. Setup database
+uv run alembic upgrade head
+uv run python app/initial_data.py
+
+# 8-9. Start servers same as above
 ```
 
 ### Legacy Stack (with pip/pipx — still supported)
@@ -346,19 +481,89 @@ uv --version
 
 > 💡 **Why switch?** `uv` is 10-100x faster than pip, has a global cache, and replaces pip + pipx + virtualenv + pyenv with one tool.
 
-### `copier` command not found
+### Copier crashes with `NoConsoleScreenBufferError` or interactive prompt fails
 
-**With uv (recommended):**
+**Cause**: Copier requires an interactive TTY to ask questions. In automation environments (AI agents, CI/CD, some IDEs), this fails.
+
+**Fix**: Use `--defaults` flag, then manually patch the generated files:
+
 ```bash
-uv tool install copier
+copier copy --trust --defaults \
+  https://github.com/fastapi/full-stack-fastapi-template \
+  my-awesome-project
 ```
 
-**Legacy:**
-```bash
-pipx install copier
-# Or if pipx not found:
-python -m pip install --user copier
+Then patch:
+- `frontend/index.html` → `<title>Your Project</title>`
+- `frontend/package.json` → `"name": "your-project"`
+- `backend/pyproject.toml` → `description = "Your description"` (⚠️ **keep `name = "app"`**)
+- `.env` → `PROJECT_NAME`, `STACK_NAME`
+- `.copier/.copier-answers.yml` → metadata for future updates
+
+### Hatchling build fails: "No module named 'app'" or `default_only_include` error
+
+**Cause**: You changed `name = "app"` in `backend/pyproject.toml` to your project name.
+
+**Fix**: The FastAPI template's internal Python package **must** remain named `app`. Only change the `description` field, not `name`:
+
+```toml
+[project]
+name = "app"          # ✅ Keep this exactly as "app"
+version = "0.1.0"
+description = "Your actual project description"   # ✅ Change only this
 ```
+
+The `name` field here is for PyPI package metadata; the actual importable package is determined by the directory structure (`backend/app/`).
+
+### SQLite: `alembic upgrade head` fails with "near ALTER: syntax error"
+
+**Cause**: The template's alembic migrations use `ALTER COLUMN` which SQLite does not support.
+
+**Fix**: Add `render_as_batch=True` to both `context.configure()` calls in `backend/app/alembic/env.py`:
+
+```python
+context.configure(
+    ...,
+    render_as_batch=True,   # ✅ Add this for SQLite compatibility
+)
+```
+
+Even better: for SQLite development, skip alembic entirely and create tables directly in `backend/app/core/db.py`:
+
+```python
+def init_db(session: Session) -> None:
+    from sqlmodel import SQLModel
+    SQLModel.metadata.create_all(engine)   # ✅ Direct table creation
+    # ... seed superuser
+```
+
+### Windows: `fastapi run` throws `NoConsoleScreenBufferError`
+
+**Cause**: The `fastapi` CLI uses `rich_toolkit` for fancy output, which crashes on some Windows terminals due to console screen buffer API issues.
+
+**Fix**: Use `uvicorn` directly instead:
+
+```bash
+# Instead of:
+fastapi run --reload app/main.py
+
+# Use:
+uv run python -m uvicorn app.main:app --reload --port 8000
+```
+
+This bypasses the CLI wrapper and works reliably on all Windows terminals.
+
+### `.env` changes not reflected / "changethis" warnings
+
+**Cause**: The backend reads `.env` from the **parent directory** (`../.env`) by default, not `backend/.env`.
+
+**Fix**: Ensure `.env` exists at the project root, or copy it:
+
+```bash
+cp .env backend/.env
+```
+
+If you've modified `backend/.env` but not the root `.env`, the app will still read the old values from the root.
 
 ### `alembic` command not found
 
