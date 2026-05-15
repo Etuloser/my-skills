@@ -178,139 +178,195 @@ Then patch these files with your confirmed project name:
 
 ### Step 4 — Configure Backend Environment
 
+> 📂 **Working Directory Convention**: This skill assumes you work from inside `backend/` and `frontend/` directories separately. The `.env` file lives in `backend/.env`, not the project root. This matches how most developers actually work.
+
 ```bash
 cd my-awesome-project/backend
 ```
 
-Generate a secure `SECRET_KEY`:
+#### 4.1 Generate Secrets
+
+Generate both `SECRET_KEY` and `FIRST_SUPERUSER_PASSWORD`:
 
 ```bash
+# Generate SECRET_KEY (32 bytes)
 python -c "import secrets; print(secrets.token_urlsafe(32))"
+
+# Generate admin password (16 bytes, user-friendly)
+python -c "import secrets; print(secrets.token_urlsafe(16))"
 ```
 
-Edit `.env` and set at least these variables:
+> 🔐 Save both outputs — you'll need them in the next step.
+
+#### 4.2 Modify `backend/app/core/config.py`
+
+Change the `.env` path from parent directory to current directory:
+
+```python
+# BEFORE (template default — reads ../.env):
+env_file="../.env",
+
+# AFTER (reads backend/.env):
+env_file=".env",
+```
+
+#### 4.3 Create `backend/.env`
+
+Create the environment file directly in `backend/`:
 
 ```env
-# Required
-SECRET_KEY=<paste-the-generated-key-here>
+# Project Identity
 PROJECT_NAME=my-awesome-project
 STACK_NAME=myawesomeproject
 
-# First superuser (auto-created by initial_data.py)
+# Security (paste your generated values)
+SECRET_KEY=<paste-generated-secret-key>
 FIRST_SUPERUSER=admin@example.com
-FIRST_SUPERUSER_PASSWORD=changethis
+FIRST_SUPERUSER_PASSWORD=<paste-generated-password>
+
+# Database Mode: sqlite | postgresql
+DATABASE_TYPE=sqlite
+
+# SQLite Settings
+SQLITE_DB_NAME=app.db
+
+# PostgreSQL Settings (uncomment if switching to postgresql)
+# POSTGRES_SERVER=localhost
+# POSTGRES_PORT=5432
+# POSTGRES_DB=app
+# POSTGRES_USER=postgres
+# POSTGRES_PASSWORD=<paste-generated-password>
+
+# Frontend
+FRONTEND_HOST=http://localhost:5173
+BACKEND_CORS_ORIGINS="http://localhost,http://localhost:5173"
+ENVIRONMENT=local
+
+# Email (optional — leave blank if not using email features)
+SMTP_HOST=
+SMTP_USER=
+SMTP_PASSWORD=
+EMAILS_FROM_EMAIL=info@example.com
+SMTP_TLS=True
+SMTP_SSL=False
+SMTP_PORT=587
+
+# Monitoring (optional)
+SENTRY_DSN=
 ```
 
-> 📋 `.env` is read from the parent directory (`../.env`) by default. Ensure the root `.env` exists and is copied to `backend/.env` if needed.
+#### 4.4 Modify `backend/app/core/config.py` for SQLite
 
-#### Database: Choose Your Mode
+Add the `DATABASE_TYPE` and `SQLITE_DB_NAME` fields, and update the URI builder:
 
-**Option 1 — SQLite (No Docker Required, Recommended for Quick Start)**
+```python
+# Add these fields inside class Settings:
+DATABASE_TYPE: Literal["sqlite", "postgresql"] = "sqlite"
+SQLITE_DB_NAME: str = "app.db"
 
-If you don't have Docker installed, use SQLite for instant local development:
+# Replace the SQLALCHEMY_DATABASE_URI property:
+@computed_field
+@property
+def SQLALCHEMY_DATABASE_URI(self) -> str:
+    if self.DATABASE_TYPE == "sqlite":
+        return f"sqlite:///./{self.SQLITE_DB_NAME}"
+    return (
+        f"postgresql+psycopg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
+        f"@{self.POSTGRES_SERVER}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
+    )
+```
 
-1. **Edit `backend/.env`:**
-   ```env
-   POSTGRES_SERVER=sqlite
-   POSTGRES_DB=app
-   ```
+#### 4.5 Modify `backend/app/core/db.py` for SQLite
 
-2. **Modify `backend/app/core/config.py`** to support SQLite:
-   ```python
-   # Remove PostgresDsn import, keep only: AnyUrl, BeforeValidator, EmailStr, HttpUrl
-   from pydantic import (
-       AnyUrl, BeforeValidator, EmailStr, HttpUrl,
-       computed_field, model_validator,
-   )
+Enable direct table creation for SQLite development:
 
-   # Replace the SQLALCHEMY_DATABASE_URI property:
-   @computed_field
-   @property
-   def SQLALCHEMY_DATABASE_URI(self) -> str:
-       return (
-           f"sqlite:///./{self.POSTGRES_DB}.db"
-           if self.POSTGRES_SERVER == "sqlite"
-           else f"postgresql+psycopg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_SERVER}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
-       )
-   ```
+```python
+def init_db(session: Session) -> None:
+    # For SQLite: create tables directly
+    # For PostgreSQL: comment this out and use alembic upgrade head
+    from sqlmodel import SQLModel
+    SQLModel.metadata.create_all(engine)
 
-3. **Modify `backend/app/alembic/env.py`** for SQLite batch mode:
-   ```python
-   # In both run_migrations_offline() and run_migrations_online(),
-   # add render_as_batch=True to context.configure():
-   context.configure(
-       ...,
-       render_as_batch=True,
-   )
-   ```
+    user = session.exec(
+        select(User).where(User.email == settings.FIRST_SUPERUSER)
+    ).first()
+    if not user:
+        user_in = UserCreate(
+            email=settings.FIRST_SUPERUSER,
+            password=settings.FIRST_SUPERUSER_PASSWORD,
+            is_superuser=True,
+        )
+        user = crud.create_user(session=session, user_create=user_in)
+```
 
-4. **Modify `backend/app/core/db.py`** to create tables directly (skip alembic for SQLite):
-   ```python
-   def init_db(session: Session) -> None:
-       # SQLite quick-start: create tables directly
-       from sqlmodel import SQLModel
-       SQLModel.metadata.create_all(engine)
-       # ... rest of the function (seed superuser)
-   ```
+#### 4.6 Modify `backend/app/alembic/env.py` for SQLite
 
-**Option 2 — PostgreSQL (Default, Requires Docker)**
+Add `render_as_batch=True` for SQLite compatibility:
 
-```bash
-# Start PostgreSQL in Docker
-docker compose up -d db
+```python
+# In BOTH run_migrations_offline() and run_migrations_online(),
+# add render_as_batch=True to context.configure():
 
-# Then use the template defaults (no code changes needed)
-alembic upgrade head
-python app/initial_data.py
+context.configure(
+    url=url,
+    target_metadata=target_metadata,
+    literal_binds=True,
+    compare_type=True,
+    render_as_batch=True,   # ← Add this for SQLite
+)
 ```
 
 ### Step 5 — Initialize Database
 
-#### For SQLite (Quick Start):
+> 📂 Make sure you are inside `backend/` directory.
 
 ```bash
 cd my-awesome-project/backend
-rm -f app.db          # clean start
+```
+
+#### SQLite Mode (Default — No Docker):
+
+```bash
+rm -f app.db          # clean start (optional)
 uv run python app/initial_data.py
 ```
 
-This creates `app.db` and seeds the first superuser.
+This creates `app.db` directly and seeds the first superuser. No alembic needed.
 
-#### For PostgreSQL (Docker):
+#### PostgreSQL Mode (Requires Docker):
+
+First uncomment PostgreSQL variables in `backend/.env` and set `DATABASE_TYPE=postgresql`, then:
 
 ```bash
-cd my-awesome-project/backend
+# Start database
+docker compose up -d db
+
+# Run migrations
 uv run alembic upgrade head
+
+# Seed data
 uv run python app/initial_data.py
 ```
 
-> 🛡️ On Windows use backslashes: `python app\initial_data.py`
-> On macOS/Linux use forward slashes: `python app/initial_data.py`
+> 🛡️ On Windows: `python app\initial_data.py`  
+> On macOS/Linux: `python app/initial_data.py`
 
 ### Step 6 — Start Development Servers
 
-**Terminal 1 — Backend:**
+**Terminal 1 — Backend (inside `backend/`):**
 
 ```bash
 cd my-awesome-project/backend
-```
-
-**On macOS/Linux:**
-```bash
-uv run fastapi run --reload ./app/main.py
-```
-
-**On Windows (recommended, avoids Unicode rendering issues):**
-```bash
-uv run python -m uvicorn app.main:app --reload --port 8000
+uv run fastapi dev app/main.py
 ```
 
 - API docs: http://localhost:8000/docs
 - ReDoc: http://localhost:8000/redoc
+- Auto-reload enabled (`--reload` is implied by `dev`)
 
-> ⚠️ **Windows Note**: The `fastapi run` CLI may throw `NoConsoleScreenBufferError` on some Windows terminals due to `rich_toolkit` Unicode rendering. Use `uvicorn` directly as shown above.
+> 💡 `fastapi dev` is the development command. It enables auto-reload, detailed tracebacks, and disables production optimizations. Use `fastapi run` (without `dev`) only for production.
 
-**Terminal 2 — Frontend:**
+**Terminal 2 — Frontend (inside `frontend/`):**
 
 ```bash
 cd my-awesome-project/frontend
@@ -345,34 +401,61 @@ copier copy --trust --defaults \
 
 # 5. Patch project metadata (only needed with --defaults)
 # - frontend/index.html: <title>
-# - package.json: "name"
+# - frontend/package.json: "name"
 # - backend/pyproject.toml: description
-# - .env: PROJECT_NAME, STACK_NAME
 
-# 6. Configure SQLite mode
-# Edit backend/.env:
-#   POSTGRES_SERVER=sqlite
-#   POSTGRES_DB=app
-#   PROJECT_NAME=my-awesome-project
-# Modify backend/app/core/config.py for SQLite URI (see Step 4)
-# Modify backend/app/core/db.py for SQLModel.metadata.create_all(engine)
-# Modify backend/app/alembic/env.py for render_as_batch=True
+# 6. Backend configuration (all inside backend/)
+cd my-awesome-project/backend
 
-# 7. Generate SECRET_KEY and configure .env
+# 6.1 Modify config.py: env_file=".env" (was "../.env")
+# 6.2 Modify config.py: add DATABASE_TYPE and SQLITE_DB_NAME fields
+# 6.3 Modify config.py: update SQLALCHEMY_DATABASE_URI for dual-mode
+# 6.4 Modify db.py: add SQLModel.metadata.create_all(engine)
+# 6.5 Modify alembic/env.py: add render_as_batch=True
+
+# 6.6 Generate secrets and create backend/.env
+python -c "import secrets; print(secrets.token_urlsafe(32))"      # → SECRET_KEY
+python -c "import secrets; print(secrets.token_urlsafe(16))"      # → FIRST_SUPERUSER_PASSWORD
+# Edit backend/.env with generated values (see Step 4.3 template)
+
+# 7. Setup database
+rm -f app.db
+uv run --no-dev python app/initial_data.py
+
+# 8. Start backend
+uv run fastapi dev app/main.py
+
+# 9. Start frontend (new terminal)
+cd ../frontend
+bun install
+bun run dev
+```
+
+### Modern Stack with PostgreSQL + Docker (Production-Ready)
+
+```bash
+# Steps 1-4 same as above
+
+# 5. Backend configuration
+cd my-awesome-project/backend
+# Modify config.py: env_file=".env"
+# Keep DATABASE_TYPE=postgresql in backend/.env
+# Uncomment and fill PostgreSQL variables in backend/.env
+
+# 6. Generate secrets
 python -c "import secrets; print(secrets.token_urlsafe(32))"
+python -c "import secrets; print(secrets.token_urlsafe(16))"
 
-# 8. Setup database
-rm -f backend/app.db
-uv run --no-dev python backend/app/initial_data.py
+# 7. Start PostgreSQL and setup database
+docker compose up -d db
+uv run alembic upgrade head
+uv run python app/initial_data.py
 
-# 9. Start backend
-# macOS/Linux:
-uv run fastapi run --reload backend/app/main.py
-# Windows (recommended):
-uv run python -m uvicorn app.main:app --reload --port 8000
+# 8. Start backend
+uv run fastapi dev app/main.py
 
-# 10. Start frontend (new terminal)
-cd my-awesome-project/frontend
+# 9. Start frontend (new terminal)
+cd ../frontend
 bun install
 bun run dev
 ```
@@ -537,33 +620,21 @@ def init_db(session: Session) -> None:
     # ... seed superuser
 ```
 
-### Windows: `fastapi run` throws `NoConsoleScreenBufferError`
-
-**Cause**: The `fastapi` CLI uses `rich_toolkit` for fancy output, which crashes on some Windows terminals due to console screen buffer API issues.
-
-**Fix**: Use `uvicorn` directly instead:
-
-```bash
-# Instead of:
-fastapi run --reload app/main.py
-
-# Use:
-uv run python -m uvicorn app.main:app --reload --port 8000
-```
-
-This bypasses the CLI wrapper and works reliably on all Windows terminals.
-
 ### `.env` changes not reflected / "changethis" warnings
 
-**Cause**: The backend reads `.env` from the **parent directory** (`../.env`) by default, not `backend/.env`.
+**Cause**: The template's default `env_file="../.env"` reads from the project root. If you placed `.env` inside `backend/` but didn't update `config.py`, the app reads from the wrong location.
 
-**Fix**: Ensure `.env` exists at the project root, or copy it:
+**Fix**: Ensure you've changed `env_file` in `backend/app/core/config.py`:
 
-```bash
-cp .env backend/.env
+```python
+# BEFORE (template default):
+env_file="../.env",
+
+# AFTER (reads from backend/.env):
+env_file=".env",
 ```
 
-If you've modified `backend/.env` but not the root `.env`, the app will still read the old values from the root.
+Then place `.env` inside `backend/.env` and restart the server.
 
 ### `alembic` command not found
 
@@ -587,8 +658,10 @@ alembic upgrade head
 
 **With uv (recommended):**
 ```bash
-uv run fastapi run --reload ./app/main.py
+uv run fastapi dev app/main.py
 ```
+
+> 💡 Use `dev` for development (auto-reload, detailed errors) and `run` for production.
 
 **Legacy:**
 ```bash
