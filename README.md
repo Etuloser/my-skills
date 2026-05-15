@@ -21,10 +21,11 @@ my-skills/
 ### env-checker
 
 - **功能**：全面检测本地开发环境配置
-- **覆盖范围**：Python、Node.js、Git、系统代理、Docker、Go 等常见开发工具
+- **覆盖范围**：Python、**uv**、Node.js、Git、系统代理、Docker、Go 等常见开发工具
 - **特点**：
   - 自动检测国内镜像配置（清华、阿里云、npm 淘宝镜像等）
   - 识别 Clash/V2Ray/Shadowsocks 代理配置
+  - **检测 `uv`（Astral Python 包管理器）安装与版本**
   - 生成结构化的检测报告
   - 提供代理排错指南
 - **适用场景**：
@@ -37,6 +38,8 @@ my-skills/
 - **功能**：基于 FastAPI 官方全栈模板初始化新项目
 - **覆盖范围**：项目脚手架生成、环境变量配置、数据库初始化、前后端开发服务器启动
 - **特点**：
+  - 🤖 **Project Naming Advisor**：描述项目即可获 AI 命名建议 + copier 上下文预填充
+  - 优先推荐 `uv` 现代工具链（保留 `pip/pipx` 兼容）
   - 整合 `copier` 模板初始化流程
   - 自动生成 `SECRET_KEY` 并配置 `.env`
   - 提供 alembic 迁移 + 初始数据注入命令
@@ -45,6 +48,7 @@ my-skills/
 - **适用场景**：
   - 从零开始创建 FastAPI + React 全栈项目
   - 需要快速复现 FastAPI 官方最佳实践
+  - 不确定项目该叫什么名字
 
 ## 使用方法
 
