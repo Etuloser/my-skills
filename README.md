@@ -10,9 +10,9 @@ my-skills/
 ├── .gitignore               # Git 忽略规则
 ├── env-checker/             # 环境检测技能
 │   └── SKILL.md
-├── <future-skill-1>/        # 未来新增的技能
+├── fastapi-init/            # FastAPI 全栈项目初始化
 │   └── SKILL.md
-└── <future-skill-2>/
+└── <future-skill>/          # 未来新增的技能
     └── SKILL.md
 ```
 
@@ -31,6 +31,20 @@ my-skills/
   - 新机器环境搭建
   - 排查包安装失败问题
   - 验证代理配置是否正确
+
+### fastapi-init
+
+- **功能**：基于 FastAPI 官方全栈模板初始化新项目
+- **覆盖范围**：项目脚手架生成、环境变量配置、数据库初始化、前后端开发服务器启动
+- **特点**：
+  - 整合 `copier` 模板初始化流程
+  - 自动生成 `SECRET_KEY` 并配置 `.env`
+  - 提供 alembic 迁移 + 初始数据注入命令
+  - 支持 SQLite 快速开发和 PostgreSQL 生产部署
+  - 包含完整的故障排查指南
+- **适用场景**：
+  - 从零开始创建 FastAPI + React 全栈项目
+  - 需要快速复现 FastAPI 官方最佳实践
 
 ## 使用方法
 
