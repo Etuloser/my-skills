@@ -17,6 +17,7 @@ I perform comprehensive environment configuration checks on the local machine an
 
 1. **Python Ecosystem**
    - `python` / `python3` installation and version
+   - **`uv`** (recommended Python package & project manager by Astral) installation and version
    - `pip` installation, version, and configured index URL (domestic mirror detection)
    - `pipx` installation and version
    - `virtualenv` / `venv` availability
@@ -75,11 +76,18 @@ When asked to check the environment, I will:
 - **Installation check**: `which <tool>` or `where <tool>` (Windows), or `<tool> --version`
 - **Version extraction**: Parse `--version` / `-V` output
 - **Pip config**: `pip config get global.index-url` or read `~/.pip/pip.ini` / `%APPDATA%\pip\pip.ini`
+- **Uv config**: `uv --version` for installation, `uv pip config get global.index-url` for mirror detection
 - **Git proxy**: `git config --global http.proxy`, `git config --global https.proxy`
 - **System proxy**: Check env vars `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `http_proxy`, `https_proxy`
 - **Proxy process detection**: `lsof -i :7890` (macOS/Linux), `netstat -ano | findstr :7890` (Windows), or `Get-Process -Name *clash*` (PowerShell)
 
 ### Extending Checks
+
+To add a new tool check (e.g., `uv`):
+
+1. Run: `uv --version` to detect installation
+2. Check config: `uv pip config get global.index-url` or relevant config file
+3. Add a row to the results table
 
 To add a new tool check (e.g., `bun`):
 
@@ -97,6 +105,7 @@ I can be instructed to check any specific tool by name, and I will attempt to de
 
 ✅ Python Ecosystem
    • Python 3.11.2 (/usr/bin/python3)
+   • uv 0.5.18 (Astral Python package manager)
    • pip 23.0 (Tsinghua mirror: https://pypi.tuna.tsinghua.edu.cn/simple)
    • pipx 1.2.0
 
@@ -120,10 +129,13 @@ I can be instructed to check any specific tool by name, and I will attempt to de
 
 If the user is in mainland China and experiencing slow package downloads:
 
-1. **Pip domestic mirrors** (if not configured):
+1. **Pip / uv domestic mirrors** (if not configured):
    ```bash
-   # Tsinghua University
+   # For pip
    pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
+
+   # For uv (uses same pip config, or set via env)
+   export UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
 
    # Alibaba Cloud
    pip config set global.index-url https://mirrors.aliyun.com/pypi/simple/
@@ -151,6 +163,7 @@ If the user is in mainland China and experiencing slow package downloads:
 ## Important Notes
 
 - Always check both `python` and `python3` on Unix-like systems
+- Check `uv` when the user works with modern Python projects (FastAPI, Django, etc.) — it replaces pip + pipx + virtualenv
 - On Windows, use `where` instead of `which`, and check `%APPDATA%` / `%USERPROFILE%` for config paths
 - If a tool is installed but not in PATH, note the installation location if found
 - When checking proxies, distinguish between:

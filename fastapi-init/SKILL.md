@@ -26,8 +26,59 @@ I guide you through initializing a new project based on the [FastAPI full-stack 
 Invoke me when:
 - You want to start a new full-stack project with FastAPI + React
 - You need to quickly spin up the FastAPI official template
-- You’ve forgotten the exact sequence of setup steps
+- You've forgotten the exact sequence of setup steps
 - You want to verify your environment before running the template
+
+## Project Naming Advisor
+
+Before scaffolding the project, I help you choose a great name. Here's how it works:
+
+### Step 1 — Describe Your Project
+
+Tell me what your project does. For example:
+
+> "一个面向中小企业的库存管理系统，支持多仓库、条码扫描和库存预警。"
+
+### Step 2 — I Suggest Names
+
+Based on your description, I propose **3 naming options** with reasoning:
+
+| # | Suggested Name | Rationale | Best For |
+|---|---------------|-----------|----------|
+| 1 | `inventory-pro` | Clear, professional, implies advanced features | Teams, B2B SaaS |
+| 2 | `stockguard` | Memorable, evokes "protection/alerting" | Branding-focused products |
+| 3 | `warehub` | Short, modern, "hub" suggests centralization | Startups, tech-savvy users |
+
+**Naming principles I follow:**
+- ✅ **Kebab-case** (`my-project`) for repo names (GitHub standard)
+- ✅ **Short & memorable** (≤ 15 chars when possible)
+- ✅ **Avoid collisions** with popular packages on PyPI/npm
+- ✅ **No underscores or CamelCase** in repo names (causes URL issues)
+- ✅ **Semantic**: name hints at what the app does
+- ⚠️ **Avoid generic words** like `app`, `system`, `platform` alone
+
+### Step 3 — You Choose or Refine
+
+Pick one of my suggestions, or ask me to generate more. Once confirmed, I use that name for all subsequent steps.
+
+### Step 4 — Pre-fill Copier Context
+
+The FastAPI template asks several interactive questions during `copier copy`. I can pre-answer them based on your project name and description:
+
+| Copier Question | My Default Answer | Notes |
+|-----------------|-------------------|-------|
+| `project_name` | Your confirmed name | Human-readable title |
+| `package_name` | `{{ project_name | lower | replace('-', '_') }}` | Python package import name |
+| `author_name` | Git user name or prompt you | Used in LICENSE, pyproject.toml |
+| `author_email` | Git user email or prompt you | Used in package metadata |
+| `project_description` | Your original description | One-liner for README/PyPI |
+| `domain_main` | `localhost` | For local development |
+| `domain_api` | `api.localhost` | API subdomain |
+| `domain_frontend` | `localhost` | Frontend origin |
+| `stack_name` | `{{ project_name | lower }}` | Docker Compose stack name |
+| `secret_key` | *(auto-generated)* | You don't need to set this manually |
+
+> 💡 **Tip**: If you want to override any of these, just tell me before we run `copier copy`.
 
 ## Prerequisites
 
@@ -75,7 +126,23 @@ python -m pip install --upgrade pip
 pipx install copier
 ```
 
-### Step 2 — Generate Project from Template
+### Step 2 — Confirm Project Name & Description
+
+Before running copier, ensure you've completed the **Project Naming Advisor** section above:
+
+1. Provide your project description
+2. Review my naming suggestions
+3. Confirm the final project name
+4. Review the pre-filled copier context (author name, email, etc.)
+
+**Example interaction:**
+
+> **You**: "我要做一个博客平台，支持 Markdown 编辑和文章分类。"  
+> **Me**: 建议 `markblog`（Markdown + blog 的组合，简洁）、`typeflow`（写作如流）、`scrivboard`（书写板）。  
+> **You**: 选 `markblog`。  
+> **Me**: 好的，copier 上下文：project_name="markblog", package_name="markblog", author="Your Name", description="A blog platform with Markdown editing and article categorization."
+
+### Step 3 — Generate Project from Template
 
 ```bash
 copier copy https://github.com/fastapi/full-stack-fastapi-template my-awesome-project --trust
@@ -88,7 +155,7 @@ copier copy https://github.com/fastapi/full-stack-fastapi-template my-awesome-pr
 - Generates a full project with backend (`app/`) and frontend (`frontend/`)
 - Creates `.env` files, Docker configs, CI/CD workflows, tests, etc.
 
-### Step 3 — Configure Backend Environment
+### Step 4 — Configure Backend Environment
 
 ```bash
 cd my-awesome-project/backend
@@ -117,7 +184,7 @@ FIRST_SUPERUSER=admin@example.com
 FIRST_SUPERUSER_PASSWORD=changethis
 ```
 
-### Step 4 — Initialize Database
+### Step 5 — Initialize Database
 
 ```bash
 # Run all pending migrations
@@ -130,7 +197,7 @@ python .\app\initial_data.py
 > 🛡️ On Windows use backslashes: `python .\app\initial_data.py`
 > On macOS/Linux use forward slashes: `python ./app/initial_data.py`
 
-### Step 5 — Start Development Servers
+### Step 6 — Start Development Servers
 
 **Terminal 1 — Backend:**
 
@@ -167,24 +234,27 @@ powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
 # 2. Install copier via uv
 uv tool install copier
 
-# 3. Scaffold project
+# 3. Describe your project & confirm name with the AI
+# (see "Project Naming Advisor" section above)
+
+# 4. Scaffold project with the confirmed name
 copier copy https://github.com/fastapi/full-stack-fastapi-template my-awesome-project --trust
 
-# 4. Configure env
+# 5. Configure env
 cd my-awesome-project/backend
 python -c "import secrets; print(secrets.token_urlsafe(32))"
 # → edit .env with the generated SECRET_KEY
 
-# 5. Setup database with uv
+# 6. Setup database with uv
 uv run alembic upgrade head
 uv run python .\app\initial_data.py   # Windows
 # uv run python ./app/initial_data.py  # macOS/Linux
 
-# 6. Start backend with uv
+# 7. Start backend with uv
 uv run fastapi run --reload .\app\main.py   # Windows
 # uv run fastapi run --reload ./app/main.py  # macOS/Linux
 
-# 7. Start frontend (new terminal)
+# 8. Start frontend (new terminal)
 cd my-awesome-project/frontend
 bun install
 bun run dev
