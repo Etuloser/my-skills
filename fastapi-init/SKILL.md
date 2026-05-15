@@ -15,10 +15,10 @@ metadata:
 
 I guide you through initializing a new project based on the [FastAPI full-stack template](https://github.com/fastapi/full-stack-fastapi-template). This includes:
 
-1. **Environment verification** — check that Python, pip, pipx, copier, and bun are installed
+1. **Environment verification** — check that Python, **uv** (recommended), copier, and bun are installed
 2. **Project scaffolding** — run `copier copy` to generate the project from the official template
 3. **Environment configuration** — generate `SECRET_KEY`, configure `.env` for backend
-4. **Database setup** — run alembic migrations and seed initial data
+4. **Database setup** — run alembic migrations and seed initial data (using `uv run` for speed)
 5. **Development server startup** — launch both backend (FastAPI) and frontend (React + Vite) in parallel
 
 ## When to use me
@@ -33,14 +33,17 @@ Invoke me when:
 
 Before running this skill, ensure the following tools are installed:
 
-| Tool | Purpose | Check Command |
-|------|---------|---------------|
-| Python 3.10+ | Backend runtime | `python --version` |
-| pip | Python package manager | `pip --version` |
-| pipx | Install Python CLI tools globally | `pipx --version` |
-| copier | Template scaffolding engine | `copier --version` |
-| bun | Frontend runtime & package manager | `bun --version` |
-| Git | Clone templates, version control | `git --version` |
+| Tool | Purpose | Check Command | Priority |
+|------|---------|---------------|----------|
+| Python 3.10+ | Backend runtime | `python --version` | Required |
+| **uv** | Python package & project manager | `uv --version` | **Recommended** |
+| pip | Python package manager (fallback) | `pip --version` | Legacy |
+| pipx | Install Python CLI tools globally | `pipx --version` | Legacy |
+| copier | Template scaffolding engine | `copier --version` | Required |
+| bun | Frontend runtime & package manager | `bun --version` | Required |
+| Git | Clone templates, version control | `git --version` | Required |
+
+> 🚀 **Why uv?** `uv` (by Astral) is a modern, extremely fast Python package manager written in Rust. It replaces `pip`, `pipx`, and `virtualenv` with a single tool. The FastAPI template officially uses `uv` for dependency management. Install it once: `curl -LsSf https://astral.sh/uv/install.sh | sh` (macOS/Linux) or `powershell -c "irm https://astral.sh/uv/install.ps1 | iex"` (Windows).
 
 > 💡 **Tip**: If any tool is missing, run `/env-checker` first to diagnose your environment and get install instructions.
 
@@ -52,8 +55,8 @@ Run `/env-checker` or manually verify:
 
 ```bash
 python --version    # >= 3.10
-pip --version
-pipx --version
+uv --version        # Recommended
+# pipx --version    # Only if not using uv
 copier --version
 bun --version
 git --version
@@ -61,6 +64,12 @@ git --version
 
 If `copier` is not installed:
 
+**With uv (recommended):**
+```bash
+uv tool install copier
+```
+
+**With pip/pipx (legacy):**
 ```bash
 python -m pip install --upgrade pip
 pipx install copier
@@ -146,31 +155,57 @@ bun run dev
 
 ## Full Command Reference
 
-```bash
-# 1. Install copier (once per machine)
-python -m pip install --upgrade pip
-pipx install copier
+### Modern Stack (with uv — recommended)
 
-# 2. Scaffold project
+```bash
+# 1. Install uv (once per machine)
+# macOS/Linux:
+curl -LsSf https://astral.sh/uv/install.sh | sh
+# Windows:
+powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
+
+# 2. Install copier via uv
+uv tool install copier
+
+# 3. Scaffold project
 copier copy https://github.com/fastapi/full-stack-fastapi-template my-awesome-project --trust
 
-# 3. Configure env
+# 4. Configure env
 cd my-awesome-project/backend
 python -c "import secrets; print(secrets.token_urlsafe(32))"
 # → edit .env with the generated SECRET_KEY
 
-# 4. Setup database
+# 5. Setup database with uv
+uv run alembic upgrade head
+uv run python .\app\initial_data.py   # Windows
+# uv run python ./app/initial_data.py  # macOS/Linux
+
+# 6. Start backend with uv
+uv run fastapi run --reload .\app\main.py   # Windows
+# uv run fastapi run --reload ./app/main.py  # macOS/Linux
+
+# 7. Start frontend (new terminal)
+cd my-awesome-project/frontend
+bun install
+bun run dev
+```
+
+### Legacy Stack (with pip/pipx — still supported)
+
+```bash
+# 1. Install copier
+python -m pip install --upgrade pip
+pipx install copier
+
+# 2-4. Same as modern stack above
+
+# 5. Setup database with legacy Python
 alembic upgrade head
 python .\app\initial_data.py   # Windows
 # python ./app/initial_data.py  # macOS/Linux
 
-# 5. Start backend
+# 6. Start backend
 fastapi run --reload .\app\main.py
-
-# 6. Start frontend (new terminal)
-cd my-awesome-project/frontend
-bun install
-bun run dev
 ```
 
 ## Project Structure (After Generation)
@@ -226,8 +261,29 @@ my-awesome-project/
 
 ## Troubleshooting
 
+### `uv` is not installed
+
+```bash
+# macOS/Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Windows
+powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
+
+# Verify
+uv --version
+```
+
+> 💡 **Why switch?** `uv` is 10-100x faster than pip, has a global cache, and replaces pip + pipx + virtualenv + pyenv with one tool.
+
 ### `copier` command not found
 
+**With uv (recommended):**
+```bash
+uv tool install copier
+```
+
+**Legacy:**
 ```bash
 pipx install copier
 # Or if pipx not found:
@@ -238,15 +294,28 @@ python -m pip install --user copier
 
 Make sure you're inside the `backend/` directory and have installed dependencies:
 
+**With uv (recommended):**
+```bash
+cd my-awesome-project/backend
+uv pip install -e ".[dev]"
+uv run alembic upgrade head
+```
+
+**Legacy:**
 ```bash
 cd my-awesome-project/backend
 pip install -e ".[dev]"
-# Or with uv:
-uv pip install -e ".[dev]"
+alembic upgrade head
 ```
 
 ### `fastapi` command not found
 
+**With uv (recommended):**
+```bash
+uv run fastapi run --reload ./app/main.py
+```
+
+**Legacy:**
 ```bash
 pip install fastapi[standard]
 # Or:
