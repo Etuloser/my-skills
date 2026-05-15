@@ -1,0 +1,9 @@
+# OpenCode Skills
+*.log
+.env
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.tmp
+*.temp
