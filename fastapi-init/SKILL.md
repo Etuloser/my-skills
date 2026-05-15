@@ -317,6 +317,24 @@ context.configure(
 )
 ```
 
+#### 4.6 Fix `backend/app/api/deps.py` for SQLite UUID compatibility
+
+JWT claims are always strings, but `session.get()` with SQLite needs a `uuid.UUID` object:
+
+```python
+# Add the import at the top:
+from uuid import UUID
+
+# Change this line in get_current_user():
+# BEFORE:
+user = session.get(User, token_data.sub)
+
+# AFTER:
+user = session.get(User, UUID(token_data.sub))
+```
+
+> 📌 This fix is safe for PostgreSQL too — native PostgreSQL UUID accepts both str and uuid.UUID.
+
 ### Step 5 — Initialize Database
 
 ```bash
@@ -419,6 +437,10 @@ python -c "import secrets; print(secrets.token_urlsafe(16))"      # → FIRST_SU
 
 # 6.4 Modify backend/app/alembic/env.py:
 #     - Add render_as_batch=True (both offline and online)
+
+# 6.5 Modify backend/app/api/deps.py:
+#     - Add from uuid import UUID
+#     - Change: session.get(User, UUID(token_data.sub))
 
 # 7. Setup database
 cd backend
@@ -621,6 +643,27 @@ def init_db(session: Session) -> None:
     SQLModel.metadata.create_all(engine)   # ✅ Direct table creation
     # ... seed superuser
 ```
+
+### SQLite: `POST /login/test-token` fails with `AttributeError: 'str' object has no attribute 'hex'`
+
+**Cause**: JWT `sub` claims are always strings, but `session.get(User, pk)` with SQLite requires a `uuid.UUID` object. SQLAlchemy's SQLite UUID type calls `.hex` on the value during parameter binding — strings don't have `.hex`.
+
+**Fix**: Convert the JWT `sub` claim to `UUID` before passing to `session.get()` in `backend/app/api/deps.py`:
+
+```python
+# BEFORE (works on PostgreSQL, fails on SQLite):
+from collections.abc import Generator
+...
+user = session.get(User, token_data.sub)
+
+# AFTER (works on both SQLite and PostgreSQL):
+from collections.abc import Generator
+from uuid import UUID      # ← add this import
+...
+user = session.get(User, UUID(token_data.sub))
+```
+
+> 📌 This fix is safe for PostgreSQL too — native PostgreSQL UUID type accepts both `str` and `uuid.UUID`.
 
 ### `.env` changes not reflected / "changethis" warnings
 
